@@ -1,0 +1,18 @@
+version: 1
+environments:
+  dev:
+    allow:
+      - "*"
+  stage:
+    allow:
+      - "*"
+  prod:
+    allow:
+      - docker.logs
+      - k8s.pod_logs
+      - k8s.events
+      - jvm.status
+      - jvm.thread_dump
+      - vm.list_path
+      - vm.find_path
+      - vm.read_file

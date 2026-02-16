@@ -1,0 +1,254 @@
+openapi: 3.1.0
+info:
+  title: DevOps AI Agent API
+  version: 0.1.0
+  description: Typed action execution API for remote DevOps agent.
+servers:
+  - url: https://agent.example.com
+paths:
+  /v1/health:
+    get:
+      summary: Health and connector readiness
+      operationId: getHealth
+      responses:
+        "200":
+          description: Service health
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/HealthResponse"
+
+  /v1/actions/execute:
+    post:
+      summary: Execute a typed action request
+      operationId: executeAction
+      security:
+        - bearerAuth: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ActionRequest"
+      responses:
+        "202":
+          description: Accepted for execution
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionAccepted"
+        "400":
+          description: Invalid request
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "401":
+          description: Unauthorized
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+        "403":
+          description: Forbidden by policy
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/actions/{request_id}:
+    get:
+      summary: Get action execution status/result
+      operationId: getActionStatus
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: request_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: Action status
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionResult"
+        "404":
+          description: Action not found
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ErrorResponse"
+
+  /v1/actions/{request_id}/stream:
+    get:
+      summary: Stream action output and status events
+      operationId: streamAction
+      security:
+        - bearerAuth: []
+      parameters:
+        - in: path
+          name: request_id
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        "200":
+          description: SSE stream
+          content:
+            text/event-stream:
+              schema:
+                type: string
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+
+  schemas:
+    HealthResponse:
+      type: object
+      required: [status, connectors]
+      properties:
+        status:
+          type: string
+          enum: [ok, degraded]
+        connectors:
+          type: object
+          additionalProperties:
+            type: string
+            enum: [ready, unavailable]
+
+    ActionRequest:
+      type: object
+      required:
+        - request_id
+        - requested_at
+        - requested_by
+        - environment
+        - action
+        - target
+        - params
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        requested_at:
+          type: string
+          format: date-time
+        requested_by:
+          type: string
+        environment:
+          type: string
+          enum: [dev, stage, prod]
+        action:
+          $ref: "#/components/schemas/ActionName"
+        target:
+          type: object
+          additionalProperties: true
+        params:
+          type: object
+          additionalProperties: true
+        require_confirmation:
+          type: boolean
+          default: false
+
+    ActionAccepted:
+      type: object
+      required: [request_id, status]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        status:
+          type: string
+          enum: [received, awaiting_confirmation, running]
+
+    ActionResult:
+      type: object
+      required: [request_id, status, started_at]
+      properties:
+        request_id:
+          type: string
+          format: uuid
+        status:
+          $ref: "#/components/schemas/ExecutionStatus"
+        started_at:
+          type: string
+          format: date-time
+        finished_at:
+          type: string
+          format: date-time
+        summary:
+          type: string
+        artifacts:
+          type: array
+          items:
+            $ref: "#/components/schemas/Artifact"
+        error:
+          $ref: "#/components/schemas/ErrorResponse"
+
+    Artifact:
+      type: object
+      required: [type, value]
+      properties:
+        type:
+          type: string
+          enum: [stdout, stderr, k8s_event, metric, json]
+        value:
+          oneOf:
+            - type: string
+            - type: object
+              additionalProperties: true
+
+    ExecutionStatus:
+      type: string
+      enum:
+        - received
+        - validated
+        - awaiting_confirmation
+        - running
+        - succeeded
+        - failed
+        - denied
+        - timed_out
+
+    ActionName:
+      type: string
+      enum:
+        - docker.logs
+        - docker.restart_container
+        - k8s.pod_logs
+        - k8s.events
+        - k8s.scale_deployment
+        - jvm.status
+        - jvm.thread_dump
+        - vm.list_path
+        - vm.find_path
+        - vm.read_file
+        - service.restart
+
+    ErrorResponse:
+      type: object
+      required: [code, message]
+      properties:
+        code:
+          type: string
+          enum:
+            - invalid_request
+            - unauthorized
+            - forbidden
+            - not_found
+            - execution_error
+            - timeout
+        message:
+          type: string
+        details:
+          type: object
+          additionalProperties: true
